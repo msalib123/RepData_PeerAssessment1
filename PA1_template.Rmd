@@ -1,0 +1,213 @@
+---
+title: "Reproducible Research: Peer Assessment 1"
+author: "Mark Salib"
+date: "8 April 2017"
+output: 
+  html_document: 
+    keep_md: true 
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(httr)
+library(lubridate)
+library(dplyr)
+library(magrittr)
+library(ggplot2)
+library(lubridate)
+
+GET("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip" , write_disk("Factivity.zip", overwrite = TRUE))
+unzip("Factivity.zip")
+
+```
+
+###Loading and preprocessing the data
+```{r dataload}
+
+dat <- read.csv("activity.csv")
+
+dat$date <- as.Date(dat$date)
+
+dat <- dat %>% 
+        mutate( day = as.numeric(day(dat$date))) %>%
+        mutate(steps = as.numeric(steps))
+
+```
+
+##What is mean total number of steps taken per day?
+  
+1- Calculate the total number of steps taken per day
+  
+```{r totsteps}
+
+dat %>% 
+        group_by(date) %>%
+        summarise(totSteps = sum(steps))
+
+
+```
+  
+  
+2- Make a histogram
+  
+```{r histogram}
+
+histdat<- dat %>% 
+          group_by(date) %>%
+          summarise(totSteps = sum(steps)) 
+
+hist(histdat$totSteps, main = "Histogram of the total steps taken per day ignoring NA", xlab = "Steps", breaks = 16, col = "wheat")
+        
+
+
+```
+  
+  
+3- calculate mean and median
+  
+```{r means}
+
+
+dat %>% 
+        group_by(date) %>%
+        summarise(meanSteps = mean(steps), medianSteps = median(steps)) 
+        
+
+
+```
+
+
+## What is the average daily acitivity pattern?
+
+```{r activitygraph}
+
+
+plotdat <- dat %>% 
+                group_by(interval) %>%
+                summarise(meanSteps = mean(steps, na.rm = TRUE)) 
+        
+ggplot(plotdat, aes(interval, meanSteps)) + geom_line() +
+        ggtitle("Mean steps per daily interval") +
+        xlab("Daily interval") + 
+        ylab("Mean steps")
+
+```
+  
+
+2- Find busiest interval  
+  
+```{r busyint}
+
+
+dat %>% 
+        group_by(interval) %>%
+        summarise(meanSteps = mean(steps, na.rm = TRUE)) %>%
+        filter(meanSteps == max(meanSteps))
+        
+
+
+```
+
+##Imputing missing values
+  
+ 1- Count how many missing values 
+  
+```{r countna}
+
+dat %>% summarise(naCount = sum(is.na(steps)))
+        
+```
+
+2- Devise strategy for filling in the missing values
+
+na values will be replaced by average for that 5 minute interval
+ 
+```{r missingna}
+
+datna.rm <- dat %>%
+        group_by(interval) %>%
+        summarise(meanSteps = mean(steps, na.rm =TRUE))
+
+
+datNew <- dat %>% mutate(newSteps = ifelse(is.na(steps) , datna.rm$meanSteps[match(interval, datna.rm$interval)] , steps))
+
+
+histdat<- datNew %>% 
+          group_by(date) %>%
+          summarise(totSteps = sum(newSteps, na.rm = TRUE)) 
+
+```
+
+Calculate the total, mean and median of the adjusted data
+ 
+```{r newmeanmedian}
+
+datNew %>% 
+        group_by(date) %>%
+        summarise(totSteps = sum(newSteps), meanSteps = mean(newSteps), medianSteps = median(newSteps) ) 
+
+
+        
+```
+
+Compare histograms
+
+
+```{r comparehisto}
+
+histdat_before<- dat %>% 
+          group_by(date) %>%
+          summarise(totSteps = sum(steps)) 
+
+
+
+histdat_after<- datNew %>% 
+          group_by(date) %>%
+          summarise(totSteps = sum(newSteps)) 
+
+
+hist(histdat_after$totSteps, main = "Total steps each day", xlab = "Steps", breaks = 16, col = "red" )
+hist(histdat_before$totSteps, main = "Total steps each day", xlab = "Steps", breaks = 16, col = "blue", add = TRUE)
+legend("topright", c("non-adjusted", "adjusted"), col=c("red", "blue"), lwd=3)
+    
+
+```
+
+
+
+Whats the final effect of adjusting the NAs?
+
+- More total steps but with same mean which is consistant with the method I used to replace NAs
+
+```{r final effect}
+
+dat %>% summarise(totSteps = sum(steps, na.rm = TRUE), meanSteps = mean(steps, na.rm = TRUE) , medianSteps = median(steps, na.rm = TRUE))
+
+datNew %>%  summarise(totNEWSteps = sum(newSteps), meanNEWSteps = mean(newSteps) , medianNEWSteps = median(newSteps))
+
+ 
+```
+
+
+## Are there differences in activity patterns between weekdays and weekends?
+
+- Yes more steps on the weekend when youre not stuck at work or school!
+
+```{r weekends}
+
+library(lubridate)
+
+datNew <- datNew %>% mutate(daytype =ifelse(wday(date) %in% c(6,7) , "weekend" , "weekday" ))
+
+plotdat <- datNew %>% 
+                group_by(interval, daytype) %>%
+                summarise(meanSteps = mean(newSteps)) 
+        
+ggplot(plotdat, aes(interval, meanSteps, colour = daytype)) + geom_line() +
+        ggtitle("Mean steps per daily interval grouped by weekend/weekeday") +
+        xlab("Daily interval") + 
+        ylab("Mean steps") +
+        facet_wrap(~daytype, ncol = 1, nrow = 2)
+
+```
